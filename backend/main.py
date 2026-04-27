@@ -6,6 +6,7 @@ Main entry point serving the API endpoints and static frontend.
 import os
 import sys
 import uuid
+import time
 import asyncio
 import logging
 from contextlib import asynccontextmanager
@@ -34,6 +35,9 @@ from google.adk.runners import Runner
 from google.adk.sessions import InMemorySessionService
 from google.genai import types
 
+from tenacity import retry, stop_after_attempt, wait_exponential, retry_if_exception
+from cache import response_cache
+
 # ── Logging ─────────────────────────────────────────────────────────────────
 logging.basicConfig(level=logging.INFO, format="%(asctime)s | %(levelname)s | %(message)s")
 logger = logging.getLogger("electionguide")
@@ -46,8 +50,10 @@ runner = Runner(
     session_service=session_service,
 )
 
-# ── Rate Limiter (simple in-memory) ─────────────────────────────────────────
-request_counts: dict[str, list[float]] = {}
+# ── Rate Limiting: Semaphore + Sliding Window ──────────────────────────────
+_gemini_semaphore = asyncio.Semaphore(3)     # Max 3 concurrent Gemini calls
+_request_timestamps: list[float] = []
+_RPM_LIMIT = 12                              # Stay under free-tier ~15 RPM
 
 
 # ── Lifespan ────────────────────────────────────────────────────────────────
@@ -90,7 +96,7 @@ class ChatResponse(BaseModel):
     tools_used: list[str] = []
 
 
-# ── Helper: Run agent ──────────────────────────────────────────────────────
+# ── Helper: Run agent (Layer 1 — Core) ─────────────────────────────────────
 
 async def run_agent(user_message: str, session_id: str) -> tuple[str, list[str]]:
     """Send a message to the ADK agent and collect the response."""
@@ -136,6 +142,49 @@ async def run_agent(user_message: str, session_id: str) -> tuple[str, list[str]]
     return full_response, tools_used
 
 
+# ── Layer 2: Retry with Exponential Backoff ─────────────────────────────────
+
+def _is_retryable(exc: BaseException) -> bool:
+    """Check if an exception is a retryable Gemini API error (429/503)."""
+    err_str = str(exc).lower()
+    return any(code in err_str for code in ["429", "resource_exhausted", "503", "unavailable", "overloaded"])
+
+
+@retry(
+    retry=retry_if_exception(_is_retryable),
+    wait=wait_exponential(multiplier=1, min=2, max=30),
+    stop=stop_after_attempt(4),
+    reraise=True,
+    before_sleep=lambda retry_state: logger.warning(
+        "Gemini API rate limited — retrying in %.1fs (attempt %d/4)",
+        retry_state.next_action.sleep, retry_state.attempt_number
+    ),
+)
+async def run_agent_with_retry(user_message: str, session_id: str) -> tuple[str, list[str]]:
+    """Wrap run_agent with exponential backoff retry for 429/503 errors."""
+    return await run_agent(user_message, session_id)
+
+
+# ── Layer 3: Throttle (Semaphore + Sliding Window) ──────────────────────────
+
+async def throttled_run_agent(user_message: str, session_id: str) -> tuple[str, list[str]]:
+    """Rate-limited agent call: enforces concurrency + RPM limits."""
+    # Sliding window — wait if approaching RPM limit
+    now = time.time()
+    _request_timestamps[:] = [t for t in _request_timestamps if now - t < 60]
+
+    if len(_request_timestamps) >= _RPM_LIMIT:
+        wait_time = 60 - (now - _request_timestamps[0])
+        if wait_time > 0:
+            logger.warning("RPM throttle — waiting %.1fs before next request", wait_time)
+            await asyncio.sleep(wait_time)
+
+    # Concurrency gate — max 3 simultaneous calls
+    async with _gemini_semaphore:
+        _request_timestamps.append(time.time())
+        return await run_agent_with_retry(user_message, session_id)
+
+
 # ── API Endpoints ───────────────────────────────────────────────────────────
 
 @app.get("/api/health")
@@ -149,18 +198,34 @@ async def chat(request: ChatRequest):
     """Send a message to the election guide agent."""
     session_id = request.session_id or str(uuid.uuid4())
 
+    # Layer 3: Check cache first
+    cached = response_cache.get(request.message)
+    if cached:
+        logger.info("Returning cached response for: %s", request.message[:50])
+        return {**cached, "session_id": session_id, "cached": True}
+
     try:
-        response_text, tools_used = await run_agent(request.message, session_id)
+        response_text, tools_used = await throttled_run_agent(request.message, session_id)
         tool_used = tools_used[0] if tools_used else None
-        return {
+        result = {
             "response": response_text,
             "session_id": session_id,
             "tools_used": tools_used,
             "tool_used": tool_used,
         }
+        # Cache the response
+        response_cache.set(request.message, {"response": response_text, "tools_used": tools_used, "tool_used": tool_used})
+        return result
     except Exception as e:
-        logger.error("Chat error: %s", str(e))
-        return JSONResponse(status_code=500, content={"error": f"Agent error: {str(e)}"})
+        err_str = str(e)
+        logger.error("Chat error: %s", err_str)
+        # Detect rate limit errors and return 429 status
+        if any(code in err_str.lower() for code in ["429", "resource_exhausted"]):
+            return JSONResponse(
+                status_code=429,
+                content={"error": "The AI is processing many requests. Please wait a moment and try again.", "retry_after": 10}
+            )
+        return JSONResponse(status_code=500, content={"error": f"Agent error: {err_str}"})
 
 
 class DemoRequest(BaseModel):
@@ -184,7 +249,7 @@ async def run_demo(request: DemoRequest):
     session_id = _demo_session_id or f"demo_{uuid.uuid4().hex[:8]}"
 
     try:
-        response_text, tools_used = await run_agent(request.question, session_id)
+        response_text, tools_used = await throttled_run_agent(request.question, session_id)
         tool_used = tools_used[0] if tools_used else None
         return {
             "response": response_text,
@@ -193,14 +258,26 @@ async def run_demo(request: DemoRequest):
             "step": request.step,
         }
     except Exception as e:
-        logger.error("Demo error at step %d: %s", request.step, str(e))
-        return JSONResponse(status_code=500, content={"error": str(e)})
+        err_str = str(e)
+        logger.error("Demo error at step %d: %s", request.step, err_str)
+        if any(code in err_str.lower() for code in ["429", "resource_exhausted"]):
+            return JSONResponse(
+                status_code=429,
+                content={"error": "Rate limited — please wait a moment.", "retry_after": 10}
+            )
+        return JSONResponse(status_code=500, content={"error": err_str})
 
 
 @app.get("/api/topics")
 async def get_topics():
     """Return the list of quick-access topic cards."""
     return {"topics": TOPIC_CARDS}
+
+
+@app.get("/api/cache-stats")
+async def cache_stats():
+    """Return cache performance metrics."""
+    return response_cache.stats
 
 
 # ── Static Frontend Serving ─────────────────────────────────────────────────

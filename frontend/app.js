@@ -88,7 +88,12 @@ async function sendMessage() {
         });
         const data = await res.json();
         removeTyping(typingEl);
-        if (data.error) {
+
+        if (res.status === 429) {
+            // Rate limited — friendly message + cooldown
+            appendBotMsg("⏳ The AI is processing many requests right now. Please wait a moment and try again.");
+            cooldownInput(8000);
+        } else if (data.error) {
             appendBotMsg("⚠️ " + data.error);
         } else {
             appendBotMsg(data.response, data.tool_used);
@@ -267,8 +272,8 @@ async function startLiveDemo() {
         demoChat.scrollTop = demoChat.scrollHeight;
         dot.className = "w-2.5 h-2.5 rounded-full bg-tertiary transition-colors duration-500";
 
-        // Pause between questions
-        if (i < DEMO_QUESTIONS.length - 1) await sleep(1000);
+        // Pause between questions — longer spacing to avoid rate limits
+        if (i < DEMO_QUESTIONS.length - 1) await sleep(3000);
     }
 }
 
@@ -292,6 +297,16 @@ function setBtnState(loading) {
         input.disabled = false;
         input.focus();
     }
+}
+
+/* Cooldown: disable input for N ms after a rate limit */
+function cooldownInput(ms) {
+    setBtnState(true);
+    updateStatus(`Rate limited — cooling down...`);
+    setTimeout(() => {
+        setBtnState(false);
+        updateStatus("Online");
+    }, ms);
 }
 
 function updateStatus(txt) {
