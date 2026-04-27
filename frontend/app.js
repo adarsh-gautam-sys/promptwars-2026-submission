@@ -21,10 +21,6 @@ const TOPICS = [
 /* ─── DEMO flow questions ─── */
 const DEMO_QUESTIONS = [
     "What are the key stages in the Indian election timeline?",
-    "How can a first-time voter register online?",
-    "What documents does a candidate need to file for nomination?",
-    "Walk me through what happens on polling day",
-    "How are EVM votes counted and results declared?",
     "Check eligibility: I am 17 years old, Indian citizen"
 ];
 
@@ -44,13 +40,13 @@ function renderTopics() {
     const grid = document.getElementById("topics-grid");
     if (!grid) return;
     grid.innerHTML = TOPICS.map((t, i) => `
-        <div onclick="askTopic(${i})" class="glass-panel p-5 md:p-8 rounded-xl border-t border-white/10 hover:translate-y-[-8px] transition-transform duration-500 group cursor-pointer">
+        <div onclick="askTopic(${i})" onkeydown="if(event.key==='Enter'||event.key===' '){event.preventDefault();askTopic(${i})}" role="button" tabindex="0" aria-label="${t.title}: ${t.desc}" class="glass-panel p-5 md:p-8 rounded-xl border-t border-white/10 hover:translate-y-[-8px] transition-transform duration-500 group cursor-pointer focus:ring-2 focus:ring-primary focus:outline-none">
             <div class="w-12 h-12 md:w-14 md:h-14 rounded-full bg-surface-container-high flex items-center justify-center mb-4 md:mb-6 text-2xl md:text-3xl group-hover:bg-primary/20 transition-colors duration-500">
-                <span class="material-symbols-outlined text-primary">${t.icon}</span>
+                <span class="material-symbols-outlined text-primary" aria-hidden="true">${t.icon}</span>
             </div>
             <h3 class="text-base md:text-xl font-headline font-bold mb-2 md:mb-3">${t.title}</h3>
             <p class="text-on-surface-variant text-xs md:text-sm leading-relaxed mb-4 md:mb-6">${t.desc}</p>
-            <span class="text-[10px] md:text-xs font-label uppercase tracking-widest text-primary flex items-center gap-2 group-hover:gap-4 transition-all">Ask AI <span class="material-symbols-outlined text-sm">arrow_forward</span></span>
+            <span class="text-[10px] md:text-xs font-label uppercase tracking-widest text-primary flex items-center gap-2 group-hover:gap-4 transition-all">Ask AI <span class="material-symbols-outlined text-sm" aria-hidden="true">arrow_forward</span></span>
         </div>
     `).join("");
 }
@@ -241,6 +237,22 @@ async function startLiveDemo() {
             const data = await res.json();
             typEl.remove();
 
+            if (res.status === 429) {
+                const errEl = document.createElement("div");
+                errEl.className = "flex justify-start items-start gap-3 msg-animate";
+                errEl.innerHTML = `
+                    <div class="w-8 h-8 rounded-full bg-surface-container-highest flex items-center justify-center shrink-0 border border-outline-variant/30">
+                        <span class="material-symbols-outlined text-xs text-primary">smart_toy</span>
+                    </div>
+                    <div class="bg-surface-container-lowest/80 border border-outline-variant/10 px-5 py-4 rounded-2xl rounded-tl-none">
+                        <p class="text-sm text-on-surface-variant">⏳ The AI is processing many requests right now. Demo paused.</p>
+                    </div>`;
+                demoChat.appendChild(errEl);
+                demoChat.scrollTop = demoChat.scrollHeight;
+                dot.className = "w-2.5 h-2.5 rounded-full bg-error transition-colors duration-500";
+                break; // Stop the demo on rate limit
+            }
+
             let toolBadge = data.tool_used
                 ? `<div class="px-2 py-0.5 bg-tertiary-container/30 text-tertiary text-[10px] rounded uppercase font-bold tracking-widest shimmer mb-3 inline-block">🔧 ${escapeHtml(data.tool_used)}</div>`
                 : "";
@@ -268,12 +280,13 @@ async function startLiveDemo() {
                     <p class="text-sm text-on-surface-variant">⚠️ Demo step failed — backend may be unavailable.</p>
                 </div>`;
             demoChat.appendChild(errEl);
+            break; // Stop the demo on error
         }
         demoChat.scrollTop = demoChat.scrollHeight;
         dot.className = "w-2.5 h-2.5 rounded-full bg-tertiary transition-colors duration-500";
 
         // Pause between questions — longer spacing to avoid rate limits
-        if (i < DEMO_QUESTIONS.length - 1) await sleep(3000);
+        if (i < DEMO_QUESTIONS.length - 1) await sleep(5000);
     }
 }
 

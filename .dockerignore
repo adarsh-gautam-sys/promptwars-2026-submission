@@ -1,0 +1,37 @@
+# Version control
+.git
+.gitignore
+
+# Virtual environments
+.venv
+venv
+
+# Tests (not needed in production)
+tests/
+.pytest_cache/
+
+# Documentation (not needed in production)
+docs/
+*.md
+!README.md
+
+# Environment files (env vars come from Cloud Run)
+.env
+.env.*
+
+# IDE and OS files
+.vscode/
+.idea/
+.gemini/
+.DS_Store
+Thumbs.db
+
+# Build artifacts
+*.zip
+gcloud.zip
+__pycache__/
+*.py[cod]
+
+# Hackathon planning files
+*.skill
+requirements_guide.md

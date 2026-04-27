@@ -29,11 +29,17 @@ Thumbs.db
 firebase-debug.log
 .firebase/
 *-firebase-adminsdk-*.json
+electionguide-ai-*.json
 
 # ─── Stitch temp files ───────
 frontend/stitch_landing.html
 frontend/stitch_chat.html
 
-# ─── Misc ────────────────────
+# ─── Build artifacts ─────────
+*.zip
+gcloud.zip
 *.log
 node_modules/
+
+# ─── Pytest ──────────────────
+.pytest_cache/

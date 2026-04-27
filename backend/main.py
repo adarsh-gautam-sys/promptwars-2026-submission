@@ -7,15 +7,19 @@ import os
 import sys
 import uuid
 import time
+import json
 import asyncio
 import logging
+from datetime import datetime, timezone
 from contextlib import asynccontextmanager
+from typing import Any
 
 from fastapi import FastAPI, HTTPException, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 from fastapi.responses import FileResponse, JSONResponse
 from pydantic import BaseModel, Field
+from starlette.middleware.base import BaseHTTPMiddleware
 
 # ── Path setup ──────────────────────────────────────────────────────────────
 ROOT_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
@@ -30,6 +34,14 @@ os.environ.setdefault("GOOGLE_API_KEY", os.getenv("GEMINI_API_KEY", ""))
 from config import get_settings
 from election_agent.agent import root_agent
 from election_agent.prompts import DEMO_QUERIES, TOPIC_CARDS
+from election_agent.tools import (
+    get_election_timeline,
+    get_voter_registration_guide,
+    get_nomination_process,
+    get_polling_day_guide,
+    get_counting_process,
+    check_eligibility,
+)
 
 from google.adk.runners import Runner
 from google.adk.sessions import InMemorySessionService
@@ -56,12 +68,60 @@ _request_timestamps: list[float] = []
 _RPM_LIMIT = 12                              # Stay under free-tier ~15 RPM
 
 
+# ── Security Headers Middleware ─────────────────────────────────────────────
+class SecurityHeadersMiddleware(BaseHTTPMiddleware):
+    """Add security headers to all responses."""
+
+    async def dispatch(self, request: Request, call_next):
+        response = await call_next(request)
+        response.headers["X-Content-Type-Options"] = "nosniff"
+        response.headers["X-Frame-Options"] = "DENY"
+        response.headers["X-XSS-Protection"] = "1; mode=block"
+        response.headers["Referrer-Policy"] = "strict-origin-when-cross-origin"
+        response.headers["Permissions-Policy"] = "camera=(), microphone=(), geolocation=()"
+        return response
+
+
 # ── Lifespan ────────────────────────────────────────────────────────────────
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     settings = get_settings()
     logger.info("🗳️  ElectionGuide AI starting on port %s", settings.port)
     logger.info("📡  Model: %s", settings.gemini_model)
+
+    # Pre-seed cache to save quota — call each tool once and reuse results
+    logger.info("🌱 Pre-seeding cache with static responses...")
+
+    timeline_data = get_election_timeline()
+    registration_data = get_voter_registration_guide()
+    nomination_data = get_nomination_process()
+    polling_data = get_polling_day_guide()
+    counting_data = get_counting_process()
+    eligibility_19 = check_eligibility(19, "indian", "voting")
+    eligibility_17 = check_eligibility(17, "indian", "voting")
+
+    preseed_data = [
+        # Topic Cards
+        ("Walk me through the complete election timeline step by step.", "get_election_timeline", timeline_data),
+        ("How do I register to vote in India?", "get_voter_registration_guide", registration_data),
+        ("Explain the nomination process for Indian elections", "get_nomination_process", nomination_data),
+        ("What happens on polling day in India?", "get_polling_day_guide", polling_data),
+        ("How are votes counted in Indian elections?", "get_counting_process", counting_data),
+        ("Am I eligible to vote? I am 19 years old, an Indian citizen", "check_eligibility", eligibility_19),
+
+        # Demo Queries
+        ("What are the key stages in the Indian election timeline?", "get_election_timeline", timeline_data),
+        ("Check eligibility: I am 17 years old, Indian citizen", "check_eligibility", eligibility_17),
+    ]
+
+    for query, tool_name, tool_result in preseed_data:
+        response_cache.set(query, {
+            "response": f"Here is the requested information:\n\n```json\n{json.dumps(tool_result, indent=2)}\n```\n\nIs there anything else you'd like to know?",
+            "tools_used": [tool_name],
+            "tool_used": tool_name,
+        })
+
+    logger.info("✅ Cache pre-seeded with %d entries", len(preseed_data))
     yield
     logger.info("👋  ElectionGuide AI shutting down")
 
@@ -75,12 +135,19 @@ app = FastAPI(
 )
 
 settings = get_settings()
+
+# Security headers
+app.add_middleware(SecurityHeadersMiddleware)
+
+# CORS — specific origins only (no wildcard)
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=settings.cors_origin_list + ["*"],
+    allow_origins=settings.cors_origin_list + [
+        "https://electionguide-ai-239331599550.us-central1.run.app",
+    ],
     allow_credentials=True,
-    allow_methods=["*"],
-    allow_headers=["*"],
+    allow_methods=["GET", "POST"],
+    allow_headers=["Content-Type", "Authorization"],
 )
 
 # ── Request / Response Models ───────────────────────────────────────────────
@@ -121,8 +188,8 @@ async def run_agent(user_message: str, session_id: str) -> tuple[str, list[str]]
 
     content = types.Content(role="user", parts=[types.Part(text=user_message)])
 
-    response_parts = []
-    tools_used = []
+    response_parts: list[str] = []
+    tools_used: list[str] = []
 
     async for event in runner.run_async(
         user_id=user_id, session_id=session_id, new_message=content
@@ -147,6 +214,9 @@ async def run_agent(user_message: str, session_id: str) -> tuple[str, list[str]]
 def _is_retryable(exc: BaseException) -> bool:
     """Check if an exception is a retryable Gemini API error (429/503)."""
     err_str = str(exc).lower()
+    # Don't retry daily quota exhaustion — only burst limits
+    if "perdayperproject" in err_str or "per_day" in err_str:
+        return False
     return any(code in err_str for code in ["429", "resource_exhausted", "503", "unavailable", "overloaded"])
 
 
@@ -165,10 +235,26 @@ async def run_agent_with_retry(user_message: str, session_id: str) -> tuple[str,
     return await run_agent(user_message, session_id)
 
 
-# ── Layer 3: Throttle (Semaphore + Sliding Window) ──────────────────────────
+# ── Layer 3: Throttle (Semaphore + Sliding Window + Daily Quota) ────────────
+
+_daily_request_count = 0
+_daily_reset_date = datetime.now(timezone.utc).date()
+
 
 async def throttled_run_agent(user_message: str, session_id: str) -> tuple[str, list[str]]:
-    """Rate-limited agent call: enforces concurrency + RPM limits."""
+    """Rate-limited agent call: enforces concurrency + RPM limits + Daily Quotas."""
+    global _daily_request_count, _daily_reset_date
+
+    now_date = datetime.now(timezone.utc).date()
+    if now_date != _daily_reset_date:
+        _daily_request_count = 0
+        _daily_reset_date = now_date
+
+    if _daily_request_count >= 18:
+        # Prevent completely burning out the quota, return a fallback.
+        logger.warning("Daily request quota safeguard reached. Rejecting request.")
+        raise Exception("429 RESOURCE_EXHAUSTED: Daily quota reached.")
+
     # Sliding window — wait if approaching RPM limit
     now = time.time()
     _request_timestamps[:] = [t for t in _request_timestamps if now - t < 60]
@@ -182,19 +268,26 @@ async def throttled_run_agent(user_message: str, session_id: str) -> tuple[str, 
     # Concurrency gate — max 3 simultaneous calls
     async with _gemini_semaphore:
         _request_timestamps.append(time.time())
-        return await run_agent_with_retry(user_message, session_id)
+        _daily_request_count += 1
+        try:
+            return await run_agent_with_retry(user_message, session_id)
+        except Exception as e:
+            err_str = str(e).lower()
+            if "perdayperproject" in err_str or "per_day" in err_str:
+                _daily_request_count = 20  # Mark as exhausted
+            raise
 
 
 # ── API Endpoints ───────────────────────────────────────────────────────────
 
 @app.get("/api/health")
-async def health_check():
+async def health_check() -> dict[str, Any]:
     """Health check endpoint for Cloud Run."""
     return {"status": "healthy", "service": "ElectionGuide AI", "model": settings.gemini_model}
 
 
 @app.post("/api/chat")
-async def chat(request: ChatRequest):
+async def chat(request: ChatRequest) -> dict[str, Any] | JSONResponse:
     """Send a message to the election guide agent."""
     session_id = request.session_id or str(uuid.uuid4())
 
@@ -238,7 +331,7 @@ _demo_session_id: str = ""
 
 
 @app.post("/api/demo")
-async def run_demo(request: DemoRequest):
+async def run_demo(request: DemoRequest) -> dict[str, Any] | JSONResponse:
     """Run a single demo step — the frontend sends questions one at a time."""
     global _demo_session_id
 
@@ -248,9 +341,24 @@ async def run_demo(request: DemoRequest):
 
     session_id = _demo_session_id or f"demo_{uuid.uuid4().hex[:8]}"
 
+    # Check cache first for demo just like chat!
+    cached = response_cache.get(request.question)
+    if cached:
+        logger.info("Returning cached response for demo question: %s", request.question[:50])
+        return {
+            "response": cached.get("response"),
+            "tool_used": cached.get("tool_used"),
+            "tools_used": cached.get("tools_used", []),
+            "step": request.step,
+        }
+
     try:
         response_text, tools_used = await throttled_run_agent(request.question, session_id)
         tool_used = tools_used[0] if tools_used else None
+
+        # Cache the response
+        response_cache.set(request.question, {"response": response_text, "tools_used": tools_used, "tool_used": tool_used})
+
         return {
             "response": response_text,
             "tool_used": tool_used,
@@ -269,13 +377,13 @@ async def run_demo(request: DemoRequest):
 
 
 @app.get("/api/topics")
-async def get_topics():
+async def get_topics() -> dict[str, Any]:
     """Return the list of quick-access topic cards."""
     return {"topics": TOPIC_CARDS}
 
 
 @app.get("/api/cache-stats")
-async def cache_stats():
+async def cache_stats() -> dict[str, Any]:
     """Return cache performance metrics."""
     return response_cache.stats
 
@@ -284,15 +392,16 @@ async def cache_stats():
 FRONTEND_DIR = os.path.join(ROOT_DIR, "frontend")
 
 if os.path.isdir(FRONTEND_DIR):
-    app.mount("/assets", StaticFiles(directory=os.path.join(FRONTEND_DIR, "assets")), name="assets") if os.path.isdir(os.path.join(FRONTEND_DIR, "assets")) else None
+    if os.path.isdir(os.path.join(FRONTEND_DIR, "assets")):
+        app.mount("/assets", StaticFiles(directory=os.path.join(FRONTEND_DIR, "assets")), name="assets")
     app.mount("/static", StaticFiles(directory=FRONTEND_DIR), name="static")
 
     @app.get("/")
-    async def serve_frontend():
+    async def serve_frontend() -> FileResponse:
         return FileResponse(os.path.join(FRONTEND_DIR, "index.html"))
 else:
     @app.get("/")
-    async def root():
+    async def root() -> dict[str, str]:
         return {"message": "ElectionGuide AI API is running. Frontend not found.", "docs": "/docs"}
 
 

@@ -14,10 +14,10 @@ logger = logging.getLogger("electionguide.cache")
 class ResponseCache:
     """Thread-safe in-memory cache with TTL expiration."""
 
-    def __init__(self, ttl: int = 300, max_size: int = 200):
+    def __init__(self, ttl: int = 86400, max_size: int = 500):
         """
         Args:
-            ttl: Time-to-live in seconds (default: 5 minutes)
+            ttl: Time-to-live in seconds (default: 24 hours)
             max_size: Maximum number of cached entries
         """
         self._cache: dict[str, tuple[dict, float]] = {}
@@ -29,7 +29,7 @@ class ResponseCache:
     def _make_key(self, message: str) -> str:
         """Normalize and hash the message for consistent cache keys."""
         normalized = message.lower().strip()
-        return hashlib.md5(normalized.encode()).hexdigest()
+        return hashlib.sha256(normalized.encode()).hexdigest()
 
     def get(self, message: str) -> dict | None:
         """Retrieve a cached response if it exists and hasn't expired."""
@@ -74,5 +74,5 @@ class ResponseCache:
         }
 
 
-# Singleton cache instance — 5 minute TTL, max 200 entries
-response_cache = ResponseCache(ttl=300, max_size=200)
+# Singleton cache instance — 24 hour TTL, max 500 entries
+response_cache = ResponseCache(ttl=86400, max_size=500)

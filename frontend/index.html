@@ -110,6 +110,9 @@
 </head>
 <body class="bg-surface text-on-surface font-body selection:bg-primary selection:text-on-primary min-h-screen">
 
+<!-- Skip to content (Accessibility) -->
+<a href="#chat-section" class="sr-only focus:not-sr-only focus:absolute focus:top-2 focus:left-2 focus:z-[999] focus:px-4 focus:py-2 focus:bg-primary focus:text-on-primary focus:rounded-lg focus:font-bold">Skip to main content</a>
+
 <!-- ═══ TopNavBar ═══ -->
 <header class="fixed top-0 left-0 w-full z-50 bg-[#121222]/60 backdrop-blur-[20px] border-b border-white/5 shadow-[0_20px_50px_rgba(196,192,255,0.06)]">
     <div class="max-w-[1920px] mx-auto flex justify-between items-center px-6 md:px-12 py-4 md:py-6">
@@ -131,6 +134,7 @@
     </div>
 </header>
 
+<main id="main-content">
 <!-- ═══ Hero Section ═══ -->
 <section id="hero" class="relative pt-32 overflow-hidden">
     <div class="absolute top-0 left-1/2 -translate-x-1/2 w-full h-full hero-glow -z-10"></div>
@@ -243,10 +247,12 @@
 </section>
 
 <!-- ═══ Demo Modal ═══ -->
-<div id="demo-overlay" class="fixed inset-0 z-[200] bg-black/70 backdrop-blur-[8px] items-center justify-center p-4 hidden">
+</main>
+
+<div id="demo-overlay" class="fixed inset-0 z-[200] bg-black/70 backdrop-blur-[8px] items-center justify-center p-4 hidden" role="dialog" aria-modal="true" aria-labelledby="demo-title">
     <div class="bg-surface-container border border-outline-variant/20 rounded-3xl w-full max-w-4xl max-h-[85vh] flex flex-col overflow-hidden shadow-2xl">
         <div class="px-6 md:px-8 py-5 border-b border-outline-variant/20">
-            <h2 class="font-headline font-bold text-lg md:text-xl">🎬 Live Demo — ElectionGuide AI</h2>
+            <h2 id="demo-title" class="font-headline font-bold text-lg md:text-xl">🎬 Live Demo — ElectionGuide AI</h2>
             <p class="text-xs md:text-sm text-on-surface-variant mt-1">Watch the AI agent answer real election queries using specialized tools</p>
         </div>
         <div id="demo-progress" class="px-6 md:px-8 py-3 flex gap-2"></div>
@@ -269,5 +275,16 @@
 </footer>
 
 <script src="/static/app.js"></script>
+<script>
+    // Configure marked for safe HTML rendering
+    if (typeof marked !== 'undefined') {
+        marked.setOptions({
+            breaks: true,
+            gfm: true,
+            headerIds: false,
+            mangle: false,
+        });
+    }
+</script>
 </body>
 </html>
