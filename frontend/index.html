@@ -1,0 +1,272 @@
+<!DOCTYPE html>
+<html class="dark" lang="en">
+<head>
+    <meta charset="utf-8"/>
+    <meta content="width=device-width, initial-scale=1.0" name="viewport"/>
+    <meta name="description" content="ElectionGuide AI — An interactive AI assistant powered by Google Gemini + ADK that helps you understand the Indian election process, timelines, voter registration, and more.">
+    <title>ElectionGuide AI 🗳️ | Election Process Education</title>
+    <script src="https://cdn.tailwindcss.com?plugins=forms,container-queries"></script>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=Outfit:wght@300;400;600;700;900&display=swap" rel="stylesheet"/>
+    <link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&display=swap" rel="stylesheet"/>
+    <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
+    <script id="tailwind-config">
+        tailwind.config = {
+            darkMode: "class",
+            theme: {
+                extend: {
+                    colors: {
+                        "on-surface": "#e3e0f8",
+                        "primary": "#c4c0ff",
+                        "on-primary": "#2000a4",
+                        "surface": "#121222",
+                        "surface-variant": "#333345",
+                        "on-primary-container": "#1b0091",
+                        "surface-container-high": "#29283a",
+                        "surface-bright": "#38374a",
+                        "tertiary": "#72de5c",
+                        "background": "#121222",
+                        "on-background": "#e3e0f8",
+                        "on-surface-variant": "#c7c4d8",
+                        "secondary": "#ffb77a",
+                        "surface-container-low": "#1a1a2b",
+                        "surface-container": "#1e1e2f",
+                        "primary-container": "#8781ff",
+                        "tertiary-container": "#3aa52a",
+                        "outline": "#918fa1",
+                        "outline-variant": "#464555",
+                        "surface-container-highest": "#333345",
+                        "surface-container-lowest": "#0c0c1d",
+                        "on-primary-fixed-variant": "#3622ca",
+                    },
+                    fontFamily: {
+                        headline: ["Outfit", "sans-serif"],
+                        display: ["Outfit", "sans-serif"],
+                        body: ["Inter", "sans-serif"],
+                        label: ["Inter", "sans-serif"]
+                    }
+                },
+            },
+        }
+    </script>
+    <style>
+        .material-symbols-outlined {
+            font-variation-settings: 'FILL' 0, 'wght' 400, 'GRAD' 0, 'opsz' 24;
+        }
+        .gradient-brand {
+            background: linear-gradient(to right, #6c63ff, #FF9933, #138808);
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+        }
+        .glass-panel {
+            background: rgba(51, 51, 69, 0.5);
+            backdrop-filter: blur(24px);
+            -webkit-backdrop-filter: blur(24px);
+        }
+        .hero-glow {
+            background: radial-gradient(circle at 50% 50%, rgba(196, 192, 255, 0.08) 0%, rgba(18, 18, 34, 0) 70%);
+        }
+        .particle-bg {
+            background-image: radial-gradient(circle at 2px 2px, rgba(196, 192, 255, 0.05) 1px, transparent 0);
+            background-size: 40px 40px;
+        }
+        .shimmer {
+            background: linear-gradient(90deg, transparent, rgba(114, 222, 92, 0.1), transparent);
+            background-size: 200% 100%;
+            animation: shimmerAnim 2s infinite;
+        }
+        @keyframes shimmerAnim {
+            0% { background-position: 200% 0; }
+            100% { background-position: -200% 0; }
+        }
+        @keyframes messageIn {
+            from { opacity: 0; transform: translateY(12px); }
+            to { opacity: 1; transform: translateY(0); }
+        }
+        .msg-animate { animation: messageIn 0.4s ease-out; }
+        @keyframes typingBounce {
+            0%, 60%, 100% { transform: translateY(0); opacity: 0.4; }
+            30% { transform: translateY(-6px); opacity: 1; }
+        }
+        .typing-dot { animation: typingBounce 1.4s infinite; }
+        .typing-dot:nth-child(2) { animation-delay: 0.2s; }
+        .typing-dot:nth-child(3) { animation-delay: 0.4s; }
+        /* Scrollbar */
+        #chat-messages::-webkit-scrollbar { width: 4px; }
+        #chat-messages::-webkit-scrollbar-track { background: transparent; }
+        #chat-messages::-webkit-scrollbar-thumb { background: rgba(255,255,255,0.1); border-radius: 4px; }
+        /* Markdown inside messages */
+        .bot-msg h1, .bot-msg h2, .bot-msg h3 { font-family: 'Outfit', sans-serif; margin: 0.6rem 0 0.3rem; font-weight: 700; }
+        .bot-msg h2 { font-size: 1.05rem; }
+        .bot-msg h3 { font-size: 0.95rem; }
+        .bot-msg ul, .bot-msg ol { padding-left: 1.2rem; margin: 0.4rem 0; }
+        .bot-msg li { margin-bottom: 0.25rem; }
+        .bot-msg strong { color: #c4c0ff; }
+        .bot-msg a { color: #818cf8; text-decoration: underline; }
+        .bot-msg table { width: 100%; border-collapse: collapse; margin: 0.5rem 0; font-size: 0.82rem; }
+        .bot-msg th, .bot-msg td { padding: 0.4rem 0.5rem; border: 1px solid rgba(70,69,85,0.5); text-align: left; }
+        .bot-msg th { background: rgba(108,99,255,0.1); font-weight: 600; }
+        .bot-msg code { background: rgba(255,255,255,0.06); padding: 0.1rem 0.35rem; border-radius: 4px; font-size: 0.85em; }
+    </style>
+</head>
+<body class="bg-surface text-on-surface font-body selection:bg-primary selection:text-on-primary min-h-screen">
+
+<!-- ═══ TopNavBar ═══ -->
+<header class="fixed top-0 left-0 w-full z-50 bg-[#121222]/60 backdrop-blur-[20px] border-b border-white/5 shadow-[0_20px_50px_rgba(196,192,255,0.06)]">
+    <div class="max-w-[1920px] mx-auto flex justify-between items-center px-6 md:px-12 py-4 md:py-6">
+        <div class="text-xl md:text-2xl font-black bg-gradient-to-r from-[#6c63ff] via-[#FF9933] to-[#138808] bg-clip-text text-transparent font-headline">
+            ElectionGuide AI 🗳️
+        </div>
+        <nav class="hidden md:flex gap-10 font-headline tracking-wide uppercase text-sm font-semibold">
+            <a class="text-primary border-b-2 border-[#6c63ff] pb-1 transition-all duration-500" href="#hero">Home</a>
+            <a class="text-[#464555] hover:text-primary pb-1 transition-all duration-500" href="#topics-section">Topics</a>
+            <a class="text-[#464555] hover:text-primary pb-1 transition-all duration-500" href="#chat-section">The Oracle</a>
+        </nav>
+        <button id="btn-live-demo" class="flex items-center gap-2 px-5 md:px-6 py-2 rounded-full bg-primary text-on-primary font-headline text-sm font-bold hover:scale-105 active:scale-100 transition-transform duration-300">
+            <span class="relative flex h-2 w-2">
+                <span class="animate-ping absolute inline-flex h-full w-full rounded-full bg-tertiary opacity-75"></span>
+                <span class="relative inline-flex rounded-full h-2 w-2 bg-tertiary"></span>
+            </span>
+            Live Demo
+        </button>
+    </div>
+</header>
+
+<!-- ═══ Hero Section ═══ -->
+<section id="hero" class="relative pt-32 overflow-hidden">
+    <div class="absolute top-0 left-1/2 -translate-x-1/2 w-full h-full hero-glow -z-10"></div>
+    <div class="max-w-7xl mx-auto px-6 py-16 md:py-20 text-center relative">
+        <div class="inline-flex items-center gap-3 px-4 py-2 rounded-full bg-surface-container-low border border-outline-variant/20 mb-8">
+            <div class="flex -space-x-2">
+                <div class="w-6 h-6 rounded-full bg-[#4285F4] flex items-center justify-center text-[10px] font-bold text-white">G</div>
+                <div class="w-6 h-6 rounded-full bg-primary flex items-center justify-center text-[10px] font-bold text-on-primary">A</div>
+            </div>
+            <span class="text-xs font-label tracking-widest uppercase text-on-surface-variant">Powered by Google Gemini + ADK</span>
+        </div>
+        <h1 class="text-4xl md:text-6xl lg:text-8xl font-black font-headline mb-8 tracking-tight leading-[1.1]">
+            Understand <span class="gradient-brand">India's Election</span> Process
+        </h1>
+        <p class="max-w-2xl mx-auto text-on-surface-variant text-base md:text-xl leading-relaxed mb-12 font-body font-light">
+            Your AI-powered guide to voter registration, election timelines, nomination, polling day procedures, and vote counting — explained step by step.
+        </p>
+        <div class="flex flex-col md:flex-row items-center justify-center gap-4 md:gap-6">
+            <button onclick="scrollToChat()" class="px-8 md:px-10 py-4 md:py-5 rounded-full bg-primary text-on-primary font-headline font-bold text-lg shadow-[0_20px_40px_rgba(196,192,255,0.15)] hover:scale-105 transition-transform duration-500">
+                Start Learning
+            </button>
+            <button onclick="startLiveDemo()" class="px-8 md:px-10 py-4 md:py-5 rounded-full border border-outline-variant text-secondary font-headline font-bold text-lg hover:bg-surface-container-high transition-colors duration-500">
+                Watch Live Demo 🎬
+            </button>
+        </div>
+    </div>
+</section>
+
+<!-- ═══ Stats Row ═══ -->
+<section class="max-w-7xl mx-auto px-6 py-12 md:py-16 border-y border-outline-variant/10">
+    <div class="grid grid-cols-3 gap-6 md:gap-24 text-center">
+        <div class="flex flex-col gap-2">
+            <span class="text-2xl md:text-5xl font-black font-headline text-on-surface">960M+</span>
+            <span class="text-[10px] md:text-xs tracking-[0.2em] uppercase font-label text-on-surface-variant/60">Eligible Voters</span>
+        </div>
+        <div class="flex flex-col gap-2">
+            <span class="text-2xl md:text-5xl font-black font-headline text-on-surface">9</span>
+            <span class="text-[10px] md:text-xs tracking-[0.2em] uppercase font-label text-on-surface-variant/60">Election Stages</span>
+        </div>
+        <div class="flex flex-col gap-2">
+            <span class="text-2xl md:text-5xl font-black font-headline text-on-surface">6</span>
+            <span class="text-[10px] md:text-xs tracking-[0.2em] uppercase font-label text-on-surface-variant/60">AI Tools</span>
+        </div>
+    </div>
+</section>
+
+<!-- ═══ Topic Grid ═══ -->
+<section id="topics-section" class="max-w-7xl mx-auto px-6 py-16 md:py-24">
+    <div class="flex justify-between items-end mb-12 md:mb-16">
+        <div class="max-w-lg">
+            <h2 class="text-2xl md:text-4xl font-headline font-bold mb-4">Core Knowledge Hub</h2>
+            <p class="text-on-surface-variant/80 text-sm md:text-base">Explore critical facets of the democratic process through our AI-powered topic cards.</p>
+        </div>
+    </div>
+    <div class="grid grid-cols-2 lg:grid-cols-3 gap-4 md:gap-8" id="topics-grid"></div>
+</section>
+
+<!-- ═══ Chat Section ═══ -->
+<section id="chat-section" class="relative px-4 md:px-6 pb-16 md:pb-24 flex items-center justify-center">
+    <div class="absolute inset-0 particle-bg pointer-events-none opacity-40"></div>
+    <div class="absolute top-1/4 -left-20 w-96 h-96 bg-primary/5 blur-[120px] rounded-full pointer-events-none"></div>
+    <div class="absolute bottom-1/4 -right-20 w-96 h-96 bg-tertiary/5 blur-[120px] rounded-full pointer-events-none"></div>
+
+    <div class="w-full max-w-5xl glass-panel rounded-3xl border border-white/10 flex flex-col overflow-hidden shadow-2xl relative z-10" style="height: 700px;">
+        <!-- Chat Header -->
+        <div class="px-6 md:px-8 py-5 flex items-center justify-between border-b border-outline-variant/20 bg-surface-container-low/40">
+            <div class="flex items-center gap-4">
+                <div class="w-10 h-10 md:w-12 md:h-12 rounded-full bg-gradient-to-tr from-primary to-primary-container flex items-center justify-center shadow-lg">
+                    <span class="material-symbols-outlined text-on-primary" style="font-variation-settings: 'FILL' 1;">auto_awesome</span>
+                </div>
+                <div>
+                    <h2 class="font-headline font-bold text-base md:text-lg text-on-surface">ElectionGuide AI</h2>
+                    <div class="flex items-center gap-2">
+                        <span class="w-2 h-2 rounded-full bg-tertiary animate-pulse"></span>
+                        <span id="chat-status" class="text-[10px] md:text-xs font-label text-tertiary uppercase tracking-widest font-semibold">Online</span>
+                    </div>
+                </div>
+            </div>
+            <button id="btn-clear" onclick="clearChat()" class="w-10 h-10 rounded-full flex items-center justify-center text-on-surface-variant hover:bg-surface-variant transition-colors" title="New conversation">
+                <span class="material-symbols-outlined">refresh</span>
+            </button>
+        </div>
+
+        <!-- Chat Messages -->
+        <div id="chat-messages" class="flex-grow overflow-y-auto p-6 md:p-8 space-y-6 scroll-smooth">
+            <!-- Welcome message -->
+            <div class="flex justify-start items-start gap-3 msg-animate">
+                <div class="w-8 h-8 rounded-full bg-surface-container-highest flex items-center justify-center shrink-0 border border-outline-variant/30">
+                    <span class="material-symbols-outlined text-xs text-primary">smart_toy</span>
+                </div>
+                <div class="max-w-[85%] md:max-w-[70%] bg-surface-container-lowest/80 border border-outline-variant/10 px-5 md:px-7 py-4 md:py-5 rounded-2xl rounded-tl-none bot-msg">
+                    <p class="text-sm md:text-[15px] leading-relaxed">Welcome! I'm <strong>ElectionGuide AI</strong> 🇮🇳</p>
+                    <p class="text-sm md:text-[15px] leading-relaxed mt-2">I can help you understand India's election process — from voter registration to results declaration. Ask me anything or pick a topic above!</p>
+                </div>
+            </div>
+        </div>
+
+        <!-- Input Bar -->
+        <div class="p-4 md:p-6 bg-surface-container-low/60 border-t border-outline-variant/10">
+            <div class="relative flex items-center gap-3">
+                <input id="chat-input" class="flex-grow bg-surface-container-lowest border-none ring-1 ring-outline-variant/30 focus:ring-2 focus:ring-primary/50 rounded-2xl py-3 md:py-4 pl-5 pr-4 text-on-surface placeholder:text-on-surface-variant/40 font-body text-sm md:text-base transition-all" placeholder="Ask about elections... e.g., How do I register to vote?" type="text" maxlength="2000" autocomplete="off"/>
+                <button id="btn-send" onclick="sendMessage()" class="bg-primary hover:bg-primary-container text-on-primary w-12 h-12 md:w-14 md:h-14 rounded-2xl flex items-center justify-center transition-all duration-300 shadow-lg shadow-primary/20 shrink-0">
+                    <span class="material-symbols-outlined">send</span>
+                </button>
+            </div>
+            <p class="text-center text-[10px] text-on-surface-variant/40 mt-3 uppercase tracking-widest">ElectionGuide AI provides educational information sourced from ECI. Not official legal advice.</p>
+        </div>
+    </div>
+</section>
+
+<!-- ═══ Demo Modal ═══ -->
+<div id="demo-overlay" class="fixed inset-0 z-[200] bg-black/70 backdrop-blur-[8px] items-center justify-center p-4 hidden">
+    <div class="bg-surface-container border border-outline-variant/20 rounded-3xl w-full max-w-4xl max-h-[85vh] flex flex-col overflow-hidden shadow-2xl">
+        <div class="px-6 md:px-8 py-5 border-b border-outline-variant/20">
+            <h2 class="font-headline font-bold text-lg md:text-xl">🎬 Live Demo — ElectionGuide AI</h2>
+            <p class="text-xs md:text-sm text-on-surface-variant mt-1">Watch the AI agent answer real election queries using specialized tools</p>
+        </div>
+        <div id="demo-progress" class="px-6 md:px-8 py-3 flex gap-2"></div>
+        <div id="demo-chat" class="flex-grow overflow-y-auto p-6 md:p-8 space-y-6 min-h-[300px]"></div>
+        <div class="px-6 md:px-8 py-4 border-t border-outline-variant/20 text-center">
+            <button onclick="closeDemo()" class="px-8 py-3 rounded-full bg-primary text-on-primary font-headline font-bold hover:scale-105 transition-transform">Close Demo</button>
+        </div>
+    </div>
+</div>
+
+<!-- ═══ Footer ═══ -->
+<footer class="w-full bg-[#121222] border-t border-[#333345]/30">
+    <div class="max-w-7xl mx-auto px-6 md:px-12 py-10 md:py-16 flex flex-col md:flex-row justify-between items-center gap-6">
+        <div class="flex flex-col gap-2 items-center md:items-start">
+            <div class="font-headline font-bold text-primary text-xl">ElectionGuide AI 🗳️</div>
+            <p class="font-label text-xs tracking-widest uppercase text-[#464555]">Built with Google ADK · Gemini 2.5 Flash · Cloud Run · Firebase</p>
+        </div>
+        <p class="font-label text-xs tracking-widest uppercase text-[#464555]">PromptWars 2026 — Election Process Education</p>
+    </div>
+</footer>
+
+<script src="/static/app.js"></script>
+</body>
+</html>

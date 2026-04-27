@@ -1,0 +1,38 @@
+# ─── Python ──────────────────
+__pycache__/
+*.py[cod]
+*.egg-info/
+dist/
+build/
+.venv/
+venv/
+*.egg
+
+# ─── Environment ─────────────
+.env
+.env.*
+!.env.example
+
+# ─── IDE ─────────────────────
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+.gemini/
+
+# ─── OS ──────────────────────
+.DS_Store
+Thumbs.db
+
+# ─── Firebase ────────────────
+firebase-debug.log
+.firebase/
+
+# ─── Stitch temp files ───────
+frontend/stitch_landing.html
+frontend/stitch_chat.html
+
+# ─── Misc ────────────────────
+*.log
+node_modules/
