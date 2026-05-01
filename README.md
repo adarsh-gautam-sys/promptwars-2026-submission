@@ -49,7 +49,7 @@ ElectionGuide AI is a civic education platform designed to demystify India's ele
                          │ REST API (JSON)
                          ▼
 ┌─────────────────────────────────────────────────────────┐
-│              FastAPI Server (main.py)                    │
+│              FastAPI Server (main.py)                   │
 │  ┌───────────────────────────────────────────────────┐  │
 │  │  Security Headers · CORS · Rate Limiting · Cache  │  │
 │  │  ┌─────────────────────────────────────────────┐  │  │
@@ -115,7 +115,7 @@ PromptWars2/
 ### Setup
 ```bash
 # Clone the repo
-git clone https://github.com/adarsh-gautam-sys/PromptWars2.git
+git clone https://github.com/adarsh-gautam-sys/promptwars-2026-submission.git
 cd PromptWars2
 
 # Create virtual environment
